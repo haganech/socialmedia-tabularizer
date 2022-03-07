@@ -31,11 +31,9 @@ YouTubeチャンネルで、（自分以外のチャンネルで）下のよう�
 このリポジトリ内の show_videos_list.js のコードをカスタマイズしたのち、[Closure Compiler Service](https://closure-compiler.appspot.com/) 等を使い、minified な表現にする必要があります。  
 "<", ">", "&", ダブルクォーテーション の4つを、HTML内に記載するためのHTMLエスケープにかければ、ブラウザで直接起動可能なワンライナースクリプトになります。  
 下のコードで簡易的に変換できます。  
-<iframe height="300" style="width: 100%;" scrolling="no" title="Untitled" src="https://codepen.io/hg0/embed/YzEgmGy?default-tab=html%2Cresult" frameborder="no" loading="lazy" allowtransparency="true" allowfullscreen="true">
-  See the Pen <a href="https://codepen.io/hg0/pen/YzEgmGy">
-  Untitled</a> by Hagane (<a href="https://codepen.io/hg0">@hg0</a>)
-  on <a href="https://codepen.io">CodePen</a>.
-</iframe>
+<span>See the Pen <a href="https://codepen.io/hg0/pen/YzEgmGy">
+  Escape HTML special symbols</a> by Hagane (<a href="https://codepen.io/hg0">@hg0</a>)
+  on <a href="https://codepen.io">CodePen</a>.</span>
 
 ## 参考にさせて頂いた情報
 - [Bookmarkletを作ろう(準備編） - Qiita](https://qiita.com/kanaxx/items/63debe502aacd73c3cb8)
