@@ -1,38 +1,31 @@
-# ShowYoutubeVideosList
-Youtubeチャンネルの過去動画一覧を、下のように簡素に一覧・ソートできるようにするブックマークレットです。  
+# Social Media Tabularizer
+This is a bookmarklet that allows you to easily list and sort the media list of channels on video sites such as Youtube as shown below.  
 ![screenshot1.png](./img/screenshot1.png)
-YouTubeチャンネルで、（自分以外のチャンネルで）下のようなことをしたいとき、時短になるはずです。
+It will be more efficient when you want to do something like below on a YouTube channel other than your own.
 
-- 動画タイトルでソート
-- 長いタイトルでも省略せず一覧表示
-- Ctrl+Fで全件を一回で検索
+- Filter and sort by video title, number of views, number of likes, number of comments, etc.
+- List long titles without abbreviating them
+- Search all of the videos with keywords
 
-動画サムネがずらっと並んでると可視性が乏しいなと感じる方向けです。
+Many social media sites restrict ordering/listing because of its self-righteous recommendation engines and often don't even allow in-channel search, so I created a listing tool to increase visibility and searchability.
 
-## 導入方法
-[このページ](https://haganech.github.io/ShowYoutubeVideosList/) のブックマークレットボタンを、お使いのブラウザのブックマークにドラッグアンドドロップすれば完了です。
+## Installation
+Drag and drop the bookmarklet button in [This page](https://haganech.github.io/socialmedia-tabularizer) into your browser's bookmark-bar.
 
-## 使い方
-(*) このスクリプトはXPathでDOM要素から一覧を生成します。そのため、まず全件が表示されている必要があります。
+## Procedure
+- Display the page of the channel for which you want to display the video list in the browser.
+- Click the bookmarklet button which has been registered in the bookmark-bar.
+- Wait for a while until the list is completed.
+In detial, please also check [my youtube page](https://www.youtube.com/@haganc) that I'll upload the instruction video later.
 
-- ホームでなく）動画一覧ページを表示する。  
-    ![screenshot2.png](./img/screenshot2.png)
-- ブックマークに登録したブックマークレットをクリックする。
-- 一覧が表示されるまでしばらく待つ。
+## Caution
+- Not tested on language pages other than English and Japanese.
+- Posting date and number of views are approximate numbers on the list page, so they are not exact values.
 
-## 注意
-- 英語と日本語以外の言語ページでは正しく動作しません。
-- 投稿日・再生回数は、一覧ページ上では概数のため、正確な値ではありません。
-- （ホームではなく）動画一覧ページ、日付順表示でないと、正しく動作しません。
+## To customize
+After customizing the show_videos_list_api.js code in this repository, you need to use [Closure Compiler Service](https://closure-compiler.appspot.com/) etc. to make it a minified ECMAscript expression.  
+See convert_to_bookmarklet.js in this repository which can be run in NodeJS to do all conversion.
 
-## カスタマイズ方法
-このリポジトリ内の show_videos_list.js のコードをカスタマイズしたのち、[Closure Compiler Service](https://closure-compiler.appspot.com/) 等を使い、minified な表現にする必要があります。  
-"<", ">", "&", ダブルクォーテーション の4つを、HTML内に記載するためのHTMLエスケープにかければ、ブラウザで直接起動可能なワンライナースクリプトになります。  
-下のコードで簡易的に変換できます。  
-<span>See the Pen <a href="https://codepen.io/hg0/pen/YzEgmGy">
-  Escape HTML special symbols</a> by Hagane (<a href="https://codepen.io/hg0">@hg0</a>)
-  on <a href="https://codepen.io">CodePen</a>.</span>
-
-## 参考にさせて頂いた情報
+## Thanks for the knowledge in these websites
 - [Bookmarkletを作ろう(準備編） - Qiita](https://qiita.com/kanaxx/items/63debe502aacd73c3cb8)
 - [Introduction to using XPath in JavaScript - XPath | MDN](https://developer.mozilla.org/en-US/docs/Web/XPath/Introduction_to_using_XPath_in_JavaScript)
