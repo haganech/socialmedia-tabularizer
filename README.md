@@ -16,6 +16,7 @@ Drag and drop the bookmarklet button in [This page](https://haganech.github.io/s
 - Display the page of the channel for which you want to display the video list in the browser.
 - Click the bookmarklet button which has been registered in the bookmark-bar.
 - Wait for a while until the list is completed.
+
 In detial, please also check [my youtube page](https://www.youtube.com/@haganc) that I'll upload the instruction video later.
 
 ## Caution
