@@ -3595,10 +3595,9 @@ javascript:(
                                 }
                                 // console.log(optimize_parameters)
 
-                                it.refresher.refresh();
-
                                 event.preventDefault();
                                 event.stopPropagation();
+                                filter_textbox.blur();
                                 return;
                             }
                             filter_textbox_form.onclick = function (event){
