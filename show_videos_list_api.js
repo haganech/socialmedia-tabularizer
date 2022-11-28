@@ -2778,11 +2778,7 @@ javascript:(
             initialize : async ()=>{
                 let it = renderer;
 
-                it.close();
-
-                document.getElementsByTagName("body")[0].style.cssText = document.getElementsByTagName("body")[0].style.cssText + `
-                    overflow: hidden;
-                `;
+                document.getElementsByTagName("body")[0].style.cssText = document.getElementsByTagName("body")[0].style.cssText + `overflow: hidden;`;
 
                 let style = document.createElement('style');
                 style.setAttribute("id", it.popup_style_id);
@@ -2805,6 +2801,17 @@ javascript:(
                         display: inline-block;
                         margin: 2px 4px 0px 4px;
                         background-color: #aa69ff;
+                        border-radius: .80rem;
+                        font-size : 1.2em;
+                        padding: .4em .7em;
+                        font-weight : 700;
+                        color : #FFF;
+                        cursor : pointer;
+                    }
+                    .______temp_video_list_tag_selected {
+                        display: inline-block;
+                        margin: 2px 4px 0px 4px;
+                        background-color: #6647ff;
                         border-radius: .80rem;
                         font-size : 1.2em;
                         padding: .4em .7em;
@@ -2916,7 +2923,7 @@ javascript:(
                     background-color : #000;
                 `;
                 popup_bg_elm.onclick = function (event){
-                    it.close();
+                    it.hide();
                 }
 
                 it.popup_elm_frame = document.createElement('div');
@@ -2952,7 +2959,7 @@ javascript:(
                 `;
                 
                 it.popup_elm_frame.onclick = function (event){
-                    it.close();
+                    it.hide();
                     // const pos = it.popup_elm.getBoundingClientRect();
                     // console.log(`${pos.left} ${pos.right} - ${pos.top} ${pos.bottom}`);
                     // console.log(event.clientX + " " + event.clientY);
@@ -3311,12 +3318,15 @@ javascript:(
                                 if (filter_textbox.value != null && filter_textbox.value != ""){
                                     if(filter_textbox.value.match("\"" + keyword + "\"") == null){
                                         filter_textbox.value = filter_textbox.value + " \"" + keyword + "\"";
+                                        event.target.setAttribute("class", "______temp_video_list_tag_selected");
                                     }else{
                                         filter_textbox.value = filter_textbox.value.replace(" \"" + keyword + "\"", "")
                                         filter_textbox.value = filter_textbox.value.replace("\"" + keyword + "\"", "")
+                                        event.target.setAttribute("class", "______temp_video_list_tag");
                                     }
                                 }else{
                                     filter_textbox.value = "\"" + keyword + "\"";
+                                    event.target.setAttribute("class", "______temp_video_list_tag_selected");
                                 }
     
                                 optimize_parameters.filter_text = filter_textbox.value;
@@ -3635,6 +3645,21 @@ javascript:(
                 return;
             },
 
+            hide : async ()=>{
+                let it = renderer;
+                if (document.getElementById(it.popup_elm_id) != null){
+                    document.getElementById(it.popup_elm_id).style.cssText = document.getElementById(it.popup_elm_id).style.cssText + " display: none;";
+                }
+                if (document.getElementById(it.popup_bg_elm_id) != null){
+                    document.getElementById(it.popup_bg_elm_id).style.cssText = document.getElementById(it.popup_bg_elm_id).style.cssText + " display: none;";
+                }
+                if (document.getElementById(it.popup_style_id) != null){
+                    document.getElementById(it.popup_style_id).style.cssText = document.getElementById(it.popup_style_id).style.cssText + " display: none;";
+                }
+
+                document.getElementsByTagName("body")[0].style.cssText = document.getElementsByTagName("body")[0].style.cssText.replaceAll("overflow: hidden;", "");
+            },
+
             close : async ()=>{
                 let it = renderer;
 
@@ -3650,6 +3675,7 @@ javascript:(
 
                 document.getElementsByTagName("body")[0].style.cssText = document.getElementsByTagName("body")[0].style.cssText.replaceAll("overflow: hidden;", "");
                 it.popup_elm = null;
+                retriever_parameters.stop_loading = true;
             },
             fadeIn : async (elm, duration = 200)=>{
                 const interval = 20;
@@ -3687,8 +3713,6 @@ javascript:(
                 elm.style.display = "none";
             }
         }
-
-        await renderer.initialize();
 
         let refresher = {
             key : "video_url",
@@ -3962,8 +3986,6 @@ javascript:(
             },
         }
 
-        await refresher.initialize(video_list_raw, video_list_optimized, renderer, "video_url", optimize_parameters);
-        renderer.refresher = refresher;
 
         const video_service_list = {
             "youtube" : {
@@ -4007,26 +4029,47 @@ javascript:(
                 "target_columns": ["thumbnail_url", "title", "duration", "publishDate", "viewCount", "comments"],
             },
         }
+        
+        if (document.getElementById(renderer.popup_elm_id) != null){
+            if (document.getElementsByTagName("body")[0].style.cssText.includes("overflow: hidden;") == false){
+                document.getElementsByTagName("body")[0].style.cssText = document.getElementsByTagName("body")[0].style.cssText + `overflow: hidden;`;
+            }
 
-        let retriever = null;
-        for (let key in video_service_list){
-            let s = video_service_list[key];
-            if (location.href.toString().match(s.url_regex)){
-                retriever = s.retriever;
-                if ("target_columns" in s){
-                    renderer.target_columns = s.target_columns;
-                    renderer.reset_items();
+            if (document.getElementById(renderer.popup_elm_id) != null){
+                document.getElementById(renderer.popup_elm_id).style.cssText = document.getElementById(renderer.popup_elm_id).style.cssText.replace(" display: none;", "");
+            }
+            if (document.getElementById(renderer.popup_bg_elm_id) != null){
+                document.getElementById(renderer.popup_bg_elm_id).style.cssText = document.getElementById(renderer.popup_bg_elm_id).style.cssText.replace(" display: none;", "");
+            }
+            if (document.getElementById(renderer.popup_style_id) != null){
+                document.getElementById(renderer.popup_style_id).style.cssText = document.getElementById(renderer.popup_style_id).style.cssText.replace(" display: none;", "");
+            }
+
+        }else{
+            await renderer.initialize();
+            await refresher.initialize(video_list_raw, video_list_optimized, renderer, "video_url", optimize_parameters);
+            renderer.refresher = refresher;
+    
+            let retriever = null;
+            for (let key in video_service_list){
+                let s = video_service_list[key];
+                if (location.href.toString().match(s.url_regex)){
+                    retriever = s.retriever;
+                    if ("target_columns" in s){
+                        renderer.target_columns = s.target_columns;
+                        renderer.reset_items();
+                    }
                 }
             }
-        }
-
-        if (retriever != null){
-            const initialize_result = await retriever.initialize(location.href, refresher, renderer.messenger);
-            if(initialize_result){
-                await retriever.retrieve(retriever_parameters);
+    
+            if (retriever != null){
+                const initialize_result = await retriever.initialize(location.href, refresher, renderer.messenger);
+                if(initialize_result){
+                    await retriever.retrieve(retriever_parameters);
+                }
+            }else{
+                renderer.messenger.danger("There're no expected media page.", 10000)
             }
-        }else{
-            renderer.messenger.danger("There're no expected media page.", 10000)
         }
 
         
