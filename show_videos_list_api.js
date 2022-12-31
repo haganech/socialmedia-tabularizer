@@ -3930,7 +3930,7 @@ javascript:(
                         color : #FFF;
                         cursor : pointer;
                     }
-                    .${prefix}_list_tag_selected {
+                    .${prefix}_vodei_list_tag_selected {
                         display: inline-block;
                         margin: 2px 4px 0px 4px;
                         background-color: #6647ff;
