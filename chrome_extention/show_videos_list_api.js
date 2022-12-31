@@ -2844,8 +2844,6 @@ javascript:(
                 const it = twitterRetriever;
 
                 try{
-
-                    console.log("start")
                     // Get authorization token
                     const _response_auth = await fetch("https://abs.twimg.com/responsive-web/client-web/main.4944c999.js", {
                         method: 'GET',
@@ -2928,8 +2926,11 @@ javascript:(
                     }
 
                     let features = {
+                        "responsive_web_twitter_blue_verified_badge_is_enabled" : true,
                         "verified_phone_label_enabled":false,
                         "responsive_web_graphql_timeline_navigation_enabled":false,
+                        "view_counts_public_visibility_enabled": true,
+                        "view_counts_everywhere_api_enabled": true,
                         "unified_cards_ad_metadata_container_dynamic_card_content_query_enabled":true,
                         "tweetypie_unmention_optimization_enabled":true,
                         "responsive_web_uc_gql_enabled":true,
@@ -2943,7 +2944,7 @@ javascript:(
                         "responsive_web_enhance_cards_enabled":true,
                     }
 
-                    const url = `https://twitter.com/i/api/graphql/pPBV6gh5L8vZyKi2In01YQ/UserMedia?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${encodeURIComponent(JSON.stringify(features))}`;
+                    const url = `https://twitter.com/i/api/graphql/QqRNmKWm3uTs75PCYTGkFw/UserMedia?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${encodeURIComponent(JSON.stringify(features))}`;
                     const _response = await fetch(url, {
                         method: 'GET',
                         headers: {
@@ -2975,7 +2976,6 @@ javascript:(
 
                             let media_id = 1;
                             for (let media of legacy.extended_entities.media){
-
                                 let video_detail = {};
 
                                 if ("additional_media_info" in media && "source_user" in media.additional_media_info){
@@ -2997,11 +2997,7 @@ javascript:(
                                 const url_without_ext = media_url_https.match(/^(.+)\.([^.]+)$/)[1]
                                 const extension = media_url_https.match(/^(.+)\.([^.]+)$/)[2]
                                 video_detail["thumbnail_url"] = `${url_without_ext}?format=${extension}&name=360x360`
-                                if ("mediaStats" in media && "viewCount" in media.mediaStats){
-                                    video_detail["viewCount"] = media.mediaStats.viewCount;
-                                }else{
-                                    video_detail["viewCount"] = -1;
-                                }
+                                video_detail["viewCount"] = Number((new JsonPathFinder()).find(entry, "//views/count", true, 0));
 
                                 video_detail["favorite_count"] = legacy.favorite_count;
                                 video_detail["quote_count"] = legacy.quote_count;
@@ -3930,7 +3926,7 @@ javascript:(
                         color : #FFF;
                         cursor : pointer;
                     }
-                    .${prefix}_vodei_list_tag_selected {
+                    .${prefix}_video_list_tag_selected {
                         display: inline-block;
                         margin: 2px 4px 0px 4px;
                         background-color: #6647ff;
@@ -5286,7 +5282,7 @@ javascript:(
             "twitter" : {
                 "url_regex" : /^https:\/\/twitter\.com\/[-0-9A-Za-z_]+/gi,
                 "retriever" : twitterRetriever,
-                "target_display_columns": ["thumbnail_url", "title", "shortDescription", "publishDate", "type", "retweet_count", "favorite_count"],
+                "target_display_columns": ["thumbnail_url", "title", "shortDescription", "publishDate", "type", "retweet_count", "favorite_count", "viewCount"],
             },
             "instagram" : {
                 "url_regex" : /^https:\/\/www\.instagram\.com\/[-0-9A-Za-z_.]+/gi,
