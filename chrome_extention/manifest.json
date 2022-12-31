@@ -1,0 +1,13 @@
+{
+    "name": "Social Media Tabularizer",
+    "description": "Social Media Tabularizer",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": ["activeTab", "scripting", "storage"],
+    "action": {
+        "default_icon": "icon.png"
+    },
+    "background": {
+        "service_worker": "background.js"
+    }
+}
