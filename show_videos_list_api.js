@@ -2109,7 +2109,6 @@ javascript:(
                 it.refresher = _refresher_func;
                 it.messenger = _messenger_func;
                 let url_m = url.match(/^(https:\/\/www.nicovideo.jp)(\/user\/)([0-9]+)(\/|$)/);
-                console.log(url_m)
                 if(url_m != null && url_m.length > 2){
                     it.username = url_m[3];
                     it.url_channel = url_m[1] + url_m[2] + url_m[3];
@@ -2125,13 +2124,15 @@ javascript:(
                 const uuid = crypto.randomUUID();
                 retriever_parameters.current_retrieve_uuid = uuid;
 
-                {
+                await it.getChannelData();
+
+                if(true){
+                    // Checking normal video page
                     let msg_rough_list = "Now retrieving Rough list ..."
                     let elm_msg_rough_list = await it.messenger.info(msg_rough_list + " Page: 1")
 
-                    let remainingCount = await it.getPageData();
-                    await sleep(it.interval)
-                    for (let i=2; i<=Math.ceil(remainingCount.totalCount / remainingCount.pageSize); i++){
+                    let page = 1;
+                    while(page){
                         if (_retriever_parameters.stop_loading == true){
                             it.messenger.warn("Loading has been stopped manually", 3000);
                             break;
@@ -2140,9 +2141,9 @@ javascript:(
                         if (retriever_parameters.current_retrieve_uuid !== uuid){
                             break;
                         }
-
-                        remainingCount = await it.getPageData(remainingCount);
-                        await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Page: ${i}`)
+                        
+                        page = await it.getPageData(page);
+                        await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Page: ${page}`)
                         await sleep(it.interval)
                     }
 
@@ -2150,40 +2151,13 @@ javascript:(
                     it.messenger.success("Rough list is completed", 3000)
                 }
 
-                {
-                    // Checking Nicorepo to check the niconama contents
+                if(true){
+                    // Checking Live video page
                     let msg_rough_list_live = "Now retrieving Rough list in Live contents ..."
                     let elm_msg_rough_list_live = await it.messenger.info(msg_rough_list_live + " Page: 1")
 
-                    let community_info = await it.getCommunityUrlFromNicorepo();
-                    if (isNullOrEmpty(community_info) != true){
-                        let remainingCount = await it.getCommunityPageData(community_info, null);
-                        await sleep(it.interval)
-                        for (let i=2; i<=Math.ceil(remainingCount.totalCount / remainingCount.pageSize); i++){
-                            if (_retriever_parameters.stop_loading == true){
-                                it.messenger.warn("Loading has been stopped manually", 3000);
-                                break;
-                            }
-
-                            if (retriever_parameters.current_retrieve_uuid !== uuid){
-                                break;
-                            }
-
-                            remainingCount = await it.getCommunityPageData(community_info, remainingCount);
-                            await it.messenger.update_msg(elm_msg_rough_list_live, `${msg_rough_list_live} Page: ${i}`)
-                            await sleep(it.interval)
-                        }
-                    }
-
-                    it.messenger.close(elm_msg_rough_list_live);
-                    it.messenger.success("Rough list in Live contents is completed", 3000)
-                }
-
-                const msg_detail_list = "Now retrieving Detailed list ..."
-                let elm_msg_detail_list = await it.messenger.info(msg_detail_list)
-
-                if (_retriever_parameters.retrieve_detail == true){
-                    for (let i=0; i<it.refresher.video_list_raw.length; i++){
+                    let page = 1;
+                    while(page){
                         if (_retriever_parameters.stop_loading == true){
                             it.messenger.warn("Loading has been stopped manually", 3000);
                             break;
@@ -2192,58 +2166,51 @@ javascript:(
                         if (retriever_parameters.current_retrieve_uuid !== uuid){
                             break;
                         }
-
-                        let video_data = null;
-                        if (it.refresher.video_list_raw[i].video_id.match(/^lv/)){
-                            video_data = await it.getLiveVideoPageData(it.refresher.video_list_raw[i][it.refresher.key], clone(it.refresher.video_list_raw[i]))
-                        }else{
-                            video_data = await it.getVideoPageData(it.refresher.video_list_raw[i][it.refresher.key], clone(it.refresher.video_list_raw[i]))
-                        }
-                        await it.refresher.update(await it.optimize_item_detail(video_data));
-                        await it.messenger.update_msg(elm_msg_detail_list, `${msg_detail_list} ${i+1} / ${it.refresher.video_list_raw.length}`)
+                        
+                        page = await it.getLivePageData(page);
+                        await it.messenger.update_msg(elm_msg_rough_list_live, `${msg_rough_list_live} Page: ${page}`)
                         await sleep(it.interval)
                     }
-                }
 
-                it.messenger.close(elm_msg_detail_list);
-                it.messenger.success("Detailed list is completed", 3000)
+                    it.messenger.close(elm_msg_rough_list_live);
+                    it.messenger.success("Rough list in Live contents is completed", 3000)
+                }
             },
-            
-            getPageData : async (remainingCount) =>{
+
+            getChannelData : async () =>{
                 const it = niconicoRetriever;
 
                 try{
-                    if (isNullOrEmpty(remainingCount)){
-                        // Get User page of /video?ref=pc_userpage_menu
-                        {
-                            const url = it.url_channel + "/video?ref=pc_userpage_menu";
-                            const response = await fetch(url);
-                            const restext = await response.text();
-                            let dom = await (new DOMParser()).parseFromString(restext,"text/html");
-                            let json = restext.match(/(\{"@context":.+\})<\/script>/)[1]
-                            const context_json = JSON.parse(json);
-                            
-                            let channel_detail = {};
-                            channel_detail["channel_id"] = it.username;
-                            channel_detail["channel_title"] = context_json["name"];
-                            channel_detail["channel_url"] = context_json["url"];
-                            channel_detail["channel_image"] = context_json["image"];
-                            channel_detail["channel_description"] = context_json["description"];
-                            channel_detail["channel_keywords"] = "";
-                            channel_detail["channel_subscribers"] = restext.match(/followerCount&quot;:([0-9]+),/)[1]
-                            it.channel_detail = channel_detail
-                            it.refresher.update_attr(channel_detail)
-                            // console.log(channel_detail)
-                        }
-                    }
+                    const url = it.url_channel + "/video?ref=pc_userpage_menu";
+                    const response = await fetch(url);
+                    const restext = await response.text();
+                    let dom = await (new DOMParser()).parseFromString(restext,"text/html");
+                    let json = restext.match(/(\{"@context":.+\})<\/script>/)[1]
+                    const context_json = JSON.parse(json);
+                    
+                    let channel_detail = {};
+                    channel_detail["channel_id"] = it.username;
+                    channel_detail["channel_title"] = context_json["name"];
+                    channel_detail["channel_url"] = context_json["url"];
+                    channel_detail["channel_image"] = context_json["image"];
+                    channel_detail["channel_description"] = context_json["description"];
+                    channel_detail["channel_keywords"] = "";
+                    channel_detail["channel_subscribers"] = restext.match(/followerCount&quot;:([0-9]+),/)[1]
+                    it.channel_detail = channel_detail
+                    it.refresher.update_attr(channel_detail)
+                    // console.log(channel_detail)
+                }catch(e){
+                    console.error(e);
+                    it.messenger.danger(e.toString(), 10000)
+                }
+            },
+            
+            getPageData : async (page) =>{
+                const it = niconicoRetriever;
 
+                try{
                     let pageSize = 100;
-                    let page = 1;
-                    if (isNullOrEmpty(remainingCount) == false){
-                        page = remainingCount.page;
-                    }
 
-                    // Get first page of /video
                     const url = `https://nvapi.nicovideo.jp/v3/users/${it.username}/videos?sortKey=registeredAt&sortOrder=desc&pageSize=${pageSize}&page=${page}`;
                     const response = await fetch(url, {
                         method: 'GET',
@@ -2268,9 +2235,10 @@ javascript:(
                         video_detail["channel_id"] = it.channel_detail["channel_id"];
                         video_detail["channel_title"] = it.channel_detail["channel_title"];
                         video_detail["channel_url"] = it.channel_detail["channel_url"];
+
                         video_detail["video_id"] = item.essential.id;
                         video_detail["title"] = item.essential.title;
-                        video_detail["type"] = item.essential.type;
+                        video_detail["type"] = (item.essential.videoLive)? "Streaming": "";
                         video_detail["video_url"] =  it.url_base + "/watch/" + item.essential.id;
                         video_detail["thumbnail_url"] = item.essential.thumbnail.url;
                         video_detail["viewCount"] = item.essential.count.view;
@@ -2279,85 +2247,38 @@ javascript:(
                         video_detail["mylist"] = item.essential.count.mylist;
                         video_detail["publishDate"] = item.essential.registeredAt;
                         video_detail["duration"] = item.essential.duration;
-                        video_detail["isLiveContent"] = (item.essential.isChannelVideo)? "Streaming": "";
                         video_detail["shortDescription"] = item.essential.shortDescription;
 
                         const date_mills_of_this_video = Number(video_detail["publishDate"]);
                         if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
-                            return {"totalCount": 0, "page": (page + 1), "pageSize": pageSize};
+                            return null;
                         }
 
                         // console.log(video_detail)
                         await it.refresher.append(await it.optimize_item_simple(video_detail))
                     }
 
-                    return {"totalCount": totalCount, "page": (page + 1), "pageSize": pageSize};
-                }catch(e){
-                    console.error(e);
-                    it.messenger.danger(e.toString(), 10000)
-                }
-            },
-
-            getCommunityUrlFromNicorepo : async ()=>{
-                const it = niconicoRetriever;
-
-                try{
-                    let next_parameter = "";
-                    for (let i=0; i<100; i++){
-                        // Get Nicorepo json for Live streaming history
-                        const url = `https://public.api.nicovideo.jp/v1/timelines/nicorepo/last-6-months/users/${it.username}/pc/entries.json?${next_parameter}object%5Btype%5D=program&type=onair`;
-                        const response = await fetch(url, {
-                            method: 'GET',
-                            headers: {
-                                'X-Frontend-Id': 6,
-                                'X-Frontend-Version': 0,
-                            },
-                            credentials: 'include',
-                        });
-                        const restext = await response.text();
-                        // console.log(restext)
-                        const json_obj = JSON.parse(restext);
-                        for (let item of json_obj.data){
-                            if (item.title.match(/(https:\/\/com\.nicovideo\.jp\/community\/[a-z0-9]+)\">(.+?)<\/a>/i)){
-                                let _m = item.title.match(/(https:\/\/com\.nicovideo\.jp\/community\/[a-z0-9]+)\">(.+?)<\/a>/i)
-                                return {"url": _m[1], "title": _m[2]}
-                            }else{
-                                next_parameter = `untilId=${item.id}&`
-                            }
-                        }
-
-                        await sleep(500);
+                    if (ytInitialData_obj.data.items.length < pageSize){
+                        return null;
+                    }else{
+                        return page + 1;
                     }
-                    return "";
-
                 }catch(e){
                     console.error(e);
                     it.messenger.danger(e.toString(), 10000)
                 }
             },
+
             
-            getCommunityPageData : async (communityInfo, remainingCount) =>{
+            getLivePageData : async (page) =>{
                 const it = niconicoRetriever;
 
                 try{
-                    let pageSize = 30;
-                    let page = 1;
-                    if (isNullOrEmpty(remainingCount) == false){
-                        page = remainingCount.page;
-                        pageSize = remainingCount.pageSize;
-                    }
+                    let pageSize = 100;
 
-                    // Get first page of /video
-                    let community_id = communityInfo.url.match(/\/(co[0-9]+)$/i)[1]
-                    let community_id_num = community_id.match(/[0-9]+/)
-                    const url = `https://com.nicovideo.jp/api/v1/communities/${community_id_num}/lives.json?limit=${pageSize}&offset=${(page-1)*pageSize}`
+                    const url = `https://live.nicovideo.jp/front/api/v1/user-broadcast-history?providerId=${it.username}&providerType=user&isIncludeNonPublic=false&offset=${page-1}&limit=${pageSize}&withTotalCount=true`
                     const response = await fetch(url, {
                         method: 'GET',
-                        headers: {
-                            'X-Frontend-Id': 21,
-                            'X-Frontend-Version': 1,
-                            'X-Requested-By': `https://com.nicovideo.jp/live/${community_id}?com_header=1&page=${page}`
-                        },
                         credentials: 'include',
                         
                     });
@@ -2367,102 +2288,50 @@ javascript:(
                     // console.log(ytInitialData_obj)
 
                     let _continuation = "";
-                    let totalCount = ytInitialData_obj.data.total;
+                    let totalCount = ytInitialData_obj.data.totalCount;
 
-                    for(const item of ytInitialData_obj.data.lives){
+                    for(const item of ytInitialData_obj.data.programsList){
                         let video_detail = {};
-                        video_detail["channel_id"] = community_id;
-                        video_detail["channel_title"] = communityInfo.title;
-                        video_detail["channel_url"] = communityInfo.url;
-                        video_detail["video_id"] = item.id;
-                        video_detail["title"] = item.title;
+                        video_detail["channel_id"] = it.channel_detail["channel_id"];
+                        video_detail["channel_title"] = it.channel_detail["channel_title"];
+                        video_detail["channel_url"] = it.channel_detail["channel_url"];
+
+                        video_detail["video_id"] = item.id.value;
+                        video_detail["title"] = item.program.title;
                         video_detail["type"] = "Streaming";
-                        video_detail["video_url"] =  item.watch_url;
-                        video_detail["thumbnail_url"] = "";
-                        video_detail["viewCount"] = "";
-                        video_detail["comments"] = "";
-                        video_detail["likes"] = "";
-                        video_detail["mylist"] = "";
-                        video_detail["publishDate"] = item.started_at;
-                        video_detail["duration"] = "";
-                        video_detail["isLiveContent"] = "Streaming";
-                        video_detail["shortDescription"] = item.description;
-                        
+                        video_detail["category"] = (new JsonPathFinder()).find(item, "//categories/mainList//text");
+                        video_detail["video_url"] =  "https://live.nicovideo.jp/watch/" + video_detail["video_id"];
+                        video_detail["thumbnail_url"] = item.thumbnail.screenshot.micro;
+                        video_detail["viewCount"] = item.statistics.viewers.value;
+                        video_detail["comments"] = item.statistics.comments.value;
+                        video_detail["publishDate"] = Number(item.program.schedule.openTime.seconds) * 1000;
+                        if (item.program.schedule.beginTime && item.program.schedule.endTime){
+                            video_detail["duration"] = (Number(item.program.schedule.endTime.seconds) - Number(item.program.schedule.beginTime.seconds));
+                        }
+                        video_detail["tags"] = (new JsonPathFinder()).find(item, "//taxonomy/tags//text", true, []);
+
+                        video_detail["shortDescription"] = item.program.description;
+
                         const date_mills_of_this_video = Number(video_detail["publishDate"]);
                         if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
-                            return {"totalCount": 0, "page": (page + 1), "pageSize": pageSize};
+                            return null;
                         }
 
                         // console.log(video_detail)
                         await it.refresher.append(await it.optimize_item_simple(video_detail))
                     }
 
-                    return {"totalCount": totalCount, "page": (page + 1), "pageSize": pageSize};
-                }catch(e){
-                    console.error(e);
-                    it.messenger.danger(e.toString(), 10000)
-                }
-            },
-
-            getVideoPageData : async (_video_url, video_detail = {}) =>{
-                console.log(`getVideoPageData : ${_video_url} ${video_detail.title}`)
-                const it = niconicoRetriever;
-
-                // Get first page of /video
-                try{
-                    const _response = await fetch(_video_url);
-                    const _restext = await _response.text();
-                    const json = _restext.match(/<div id="js-initial-watch-data" data-api-data="(.+?)" /)[1];
-                    // console.log(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"))
-                    const json_obj = JSON.parse(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"));
-                    // console.log(json_obj)
-                    video_detail["shortDescription"] = json_obj.video.description;
-                    // console.log(video_detail["shortDescription"])
-                    video_detail["category"] = json_obj.genre.label;
-                    // console.log(video_detail["category"])
-                    
-                }catch(e){
-                    console.error(e);
-                    it.messenger.danger(e.toString(), 10000)
-                }
-    
-                return video_detail;
-            },
-
-            getLiveVideoPageData : async (_video_url, video_detail = {}) =>{
-                console.log(`getVideoPageData : ${_video_url} ${video_detail.title}`)
-                const it = niconicoRetriever;
-
-                // Get first page of /video
-                try{
-                    const _response = await fetch(_video_url);
-                    const _restext = await _response.text();
-                    const json = _restext.match(/<script id="embedded-data" data-props="(.+?)"/)[1];
-                    // console.log(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"))
-                    const json_obj = JSON.parse(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"));
-                    // console.log(json_obj)
-                    video_detail["video_id"] = json_obj.program.nicoliveProgramId;
-                    video_detail["thumbnail_url"] = json_obj.program.thumbnail.small;
-                    video_detail["shortDescription"] = json_obj.program.description;
-                    video_detail["viewCount"] = json_obj.program.statistics.watchCount;
-                    video_detail["comments"] = json_obj.program.statistics.commentCount;
-                    video_detail["duration"] = json_obj.program.endTime - json_obj.program.beginTime;
-                    let tags = []
-                    for (let tag of json_obj.program.tag.list){
-                        if(tag.type == "category"){
-                            video_detail["category"] = tag.text
-                        }
-                        tags.push(tag.text)
+                    if (ytInitialData_obj.data.programsList.length < pageSize){
+                        return null;
+                    }else{
+                        return page + 1;
                     }
-                    video_detail["tags"] = tags
-                    
                 }catch(e){
                     console.error(e);
                     it.messenger.danger(e.toString(), 10000)
                 }
-    
-                return video_detail;
             },
+
             
             optimize_item_simple : async (item)=>{
                 let new_item = {
@@ -2476,45 +2345,16 @@ javascript:(
                     "title": item.title,
                     "duration": item.duration,
                     "publishDate": new Date(item.publishDate),
-                    "category": "",
-                    "type": ((i)=>{
-                        if (i.isLiveContent) {return "Streaming"}
-                        else {return i.type}
-                    })(item),
+                    "category": (item.category) ? item.category : "",
+                    "type": (item.type) ? item.type : "",
                     "viewCount": Number(item.viewCount),
                     "comments": Number(item.comments),
-                    "likes": Number(item.likes),
-                    "mylistCount":  Number(item.mylist),
+                    "likes": (item.likes)? Number(item.likes) : 0,
+                    "mylistCount":  (item.mylist)? Number(item.mylist): 0,
                     "shortDescription" : item.shortDescription,
                 }
                 return new_item;
             },
-            optimize_item_detail : async (item)=>{
-                let new_item = {
-                    "channel_id": item.channel_id,
-                    "channel_title": item.channel_title,
-                    "channel_url": item.channel_url,
-
-                    "video_id": item.video_id,
-                    "video_url" : item.video_url,
-                    "thumbnail_url" : item.thumbnail_url,
-                    "title": item.title,
-                    "duration": item.duration,
-                    "publishDate": new Date(item.publishDate),
-                    "category": item.category,
-                    "type": ((i)=>{
-                        if (i.isLiveContent) {return "Streaming"}
-                        else {return i.type}
-                    })(item),
-                    "viewCount": Number(item.viewCount),
-                    "comments": Number(item.comments),
-                    "likes": Number(item.likes),
-                    "mylistCount":  Number(item.mylist),
-                    "shortDescription" : item.shortDescription,
-                }
-                return new_item;
-            }
-
         }
         
         let twitcastingRetriever = {
@@ -3902,7 +3742,7 @@ javascript:(
                 style.setAttribute("id", it.popup_style_id);
                 const css = `
                     #${prefix}_video_list input[type=text]{
-                        z-index: 5003;
+                        z-index: 5000003;
                         padding: 6px;
                         font-size: 1.5em;
                         font-height:1.5;
@@ -4035,7 +3875,7 @@ javascript:(
                     transition: opacity .15s linear;
                     top: 0;
                     left: 0;
-                    z-index: 5000;
+                    z-index: 5000000;
                     width: 100vw;
                     height: 100vh;
                     background-color : #000;
@@ -4054,7 +3894,7 @@ javascript:(
                     width: 100vw;
                     height: 100vh;
                     display: block;
-                    z-index: 5001;
+                    z-index: 5000001;
                     font-size: 10px;
                 `;
 
@@ -4071,7 +3911,7 @@ javascript:(
                     margin-right: auto;
                     padding-top: 5px;
                     padding-bottom: 15px;
-                    z-index: 5002;
+                    z-index: 5000002;
                     border-radius: 10px;
                     font-family : "YakuHanJPs","-apple-system","BlinkMacSystemFont","Segoe UI","Hiragino Sans","Hiragino Kaku Gothic ProN","Meiryo",Roboto, Arial, sans-serif;
                 `;
@@ -4234,6 +4074,7 @@ javascript:(
                 }
                 term_dropdown.style.cssText = `
                     height: 2.2em;
+                    font-size: 12px;
                     margin: 6px;
                     border-radius: 4px;
                     border: solid #AAA 1px;
