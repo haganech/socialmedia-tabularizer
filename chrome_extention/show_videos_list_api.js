@@ -1,7 +1,7 @@
 javascript:(
     async function(){
         const is_chrome_extension = (chrome && chrome.storage)? true : false;
-        console.log("This is executing on : " + is_chrome_extension);
+        console.log("This is executing on chrome_extension: " + is_chrome_extension);
         const prefix = "io_github_haganech";
         
         class SimpleDateFormat {
@@ -1879,8 +1879,9 @@ javascript:(
 
             channel_detail : {},
             
-            authorization : "",
             clientId : "",
+            deviceId : "",
+            clientSessionId: "",
             
             initialize : async (url, _refresher_func, _messenger_func) =>{
                 const it = twitchRetriever;
@@ -1894,8 +1895,9 @@ javascript:(
                     it.url_channel = url_m[1] + "/"+ url_m[3];
                     it.url_base = url_m[1];
                     
-                    it.authorization = authorization;
-                    it.clientId = clientId;
+                    it.clientId = "";
+                    it.deviceId = "";
+                    it.clientSessionId = "";
 
                     return true;
                 }else{
@@ -1943,12 +1945,18 @@ javascript:(
                 const it = twitchRetriever;
 
                 try{
+                    const _response_html = await (await fetch(it.url_channel)).text()
+                    it.clientId = _response_html.match(/clientId="([^"]+)"/)[1]
+                    it.deviceId = localStorage.getItem('local_copy_unique_id')
+                    it.clientSessionId = localStorage.getItem('local_storage_app_session_id')
+                    
                     const _response = await fetch(it.api_url, {
                         method: 'POST', // *GET, POST, PUT, DELETE, etc.
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': it.authorization,
-                            'Client-Id' : it.clientId
+                            'Client-Id' : it.clientId,
+                            'X-Device-Id' : it.deviceId,
+                            'Client-Session-Id' : it.clientSessionId
                         },
                         //credentials: 'include',
                         body: JSON.stringify([
@@ -2002,8 +2010,9 @@ javascript:(
                         method: 'POST', // *GET, POST, PUT, DELETE, etc.
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': it.authorization,
-                            'Client-Id' : it.clientId
+                            'Client-Id' : it.clientId,
+                            'X-Device-Id' : it.deviceId,
+                            'Client-Session-Id' : it.clientSessionId
                         },
                         //credentials: 'include',
                         body: JSON.stringify([
@@ -2027,7 +2036,10 @@ javascript:(
                     let _cursor = null;
 
                     for (let item of _resjson[0].data.user.videos.edges){
-                        it.channel_detail["channel_image"] = item.node.owner.profileImageURL;
+                        if (("channel_image" in it.channel_detail) == false){
+                            it.channel_detail["channel_image"] = item.node.owner.profileImageURL;
+                            it.refresher.update_attr(it.channel_detail)
+                        }
 
                         let video_detail = {};
                         video_detail["channel_id"] = it.channel_detail["channel_id"];
@@ -2043,10 +2055,9 @@ javascript:(
 
                         _cursor = item.cursor;
 
-                        const date_mills_of_this_video = (new Date(item.publishDate)).getTime() + ((new Date(item.publishDate)).getTimezoneOffset() * 60 * 1000);
+                        const date_mills_of_this_video = (new Date(video_detail["publishDate"])).getTime() + ((new Date(video_detail["publishDate"])).getTimezoneOffset() * 60 * 1000);
                         if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
-                            _continuation = null;
-                            break;
+                            return null;
                         }
 
                         await it.refresher.append(await it.optimize_item_simple(video_detail))
@@ -2108,8 +2119,7 @@ javascript:(
 
                 it.refresher = _refresher_func;
                 it.messenger = _messenger_func;
-                let url_m = url.match(/^(https:\/\/www.nicovideo.jp)(\/user\/)([0-9]+)(\/|$)/);
-                console.log(url_m)
+                let url_m = url.match(/^(https:\/\/www.nicovideo.jp)(\/user\/)([0-9]+)(\/|\?|$)/);
                 if(url_m != null && url_m.length > 2){
                     it.username = url_m[3];
                     it.url_channel = url_m[1] + url_m[2] + url_m[3];
@@ -2125,13 +2135,15 @@ javascript:(
                 const uuid = crypto.randomUUID();
                 retriever_parameters.current_retrieve_uuid = uuid;
 
-                {
+                await it.getChannelData();
+
+                if(true){
+                    // Checking normal video page
                     let msg_rough_list = "Now retrieving Rough list ..."
                     let elm_msg_rough_list = await it.messenger.info(msg_rough_list + " Page: 1")
 
-                    let remainingCount = await it.getPageData();
-                    await sleep(it.interval)
-                    for (let i=2; i<=Math.ceil(remainingCount.totalCount / remainingCount.pageSize); i++){
+                    let page = 1;
+                    while(page){
                         if (_retriever_parameters.stop_loading == true){
                             it.messenger.warn("Loading has been stopped manually", 3000);
                             break;
@@ -2140,9 +2152,9 @@ javascript:(
                         if (retriever_parameters.current_retrieve_uuid !== uuid){
                             break;
                         }
-
-                        remainingCount = await it.getPageData(remainingCount);
-                        await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Page: ${i}`)
+                        
+                        page = await it.getPageData(page);
+                        await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Page: ${page}`)
                         await sleep(it.interval)
                     }
 
@@ -2150,40 +2162,13 @@ javascript:(
                     it.messenger.success("Rough list is completed", 3000)
                 }
 
-                {
-                    // Checking Nicorepo to check the niconama contents
+                if(true){
+                    // Checking Live video page
                     let msg_rough_list_live = "Now retrieving Rough list in Live contents ..."
                     let elm_msg_rough_list_live = await it.messenger.info(msg_rough_list_live + " Page: 1")
 
-                    let community_info = await it.getCommunityUrlFromNicorepo();
-                    if (isNullOrEmpty(community_info) != true){
-                        let remainingCount = await it.getCommunityPageData(community_info, null);
-                        await sleep(it.interval)
-                        for (let i=2; i<=Math.ceil(remainingCount.totalCount / remainingCount.pageSize); i++){
-                            if (_retriever_parameters.stop_loading == true){
-                                it.messenger.warn("Loading has been stopped manually", 3000);
-                                break;
-                            }
-
-                            if (retriever_parameters.current_retrieve_uuid !== uuid){
-                                break;
-                            }
-
-                            remainingCount = await it.getCommunityPageData(community_info, remainingCount);
-                            await it.messenger.update_msg(elm_msg_rough_list_live, `${msg_rough_list_live} Page: ${i}`)
-                            await sleep(it.interval)
-                        }
-                    }
-
-                    it.messenger.close(elm_msg_rough_list_live);
-                    it.messenger.success("Rough list in Live contents is completed", 3000)
-                }
-
-                const msg_detail_list = "Now retrieving Detailed list ..."
-                let elm_msg_detail_list = await it.messenger.info(msg_detail_list)
-
-                if (_retriever_parameters.retrieve_detail == true){
-                    for (let i=0; i<it.refresher.video_list_raw.length; i++){
+                    let page = 1;
+                    while(page){
                         if (_retriever_parameters.stop_loading == true){
                             it.messenger.warn("Loading has been stopped manually", 3000);
                             break;
@@ -2192,58 +2177,51 @@ javascript:(
                         if (retriever_parameters.current_retrieve_uuid !== uuid){
                             break;
                         }
-
-                        let video_data = null;
-                        if (it.refresher.video_list_raw[i].video_id.match(/^lv/)){
-                            video_data = await it.getLiveVideoPageData(it.refresher.video_list_raw[i][it.refresher.key], clone(it.refresher.video_list_raw[i]))
-                        }else{
-                            video_data = await it.getVideoPageData(it.refresher.video_list_raw[i][it.refresher.key], clone(it.refresher.video_list_raw[i]))
-                        }
-                        await it.refresher.update(await it.optimize_item_detail(video_data));
-                        await it.messenger.update_msg(elm_msg_detail_list, `${msg_detail_list} ${i+1} / ${it.refresher.video_list_raw.length}`)
+                        
+                        page = await it.getLivePageData(page);
+                        await it.messenger.update_msg(elm_msg_rough_list_live, `${msg_rough_list_live} Page: ${page}`)
                         await sleep(it.interval)
                     }
-                }
 
-                it.messenger.close(elm_msg_detail_list);
-                it.messenger.success("Detailed list is completed", 3000)
+                    it.messenger.close(elm_msg_rough_list_live);
+                    it.messenger.success("Rough list in Live contents is completed", 3000)
+                }
             },
-            
-            getPageData : async (remainingCount) =>{
+
+            getChannelData : async () =>{
                 const it = niconicoRetriever;
 
                 try{
-                    if (isNullOrEmpty(remainingCount)){
-                        // Get User page of /video?ref=pc_userpage_menu
-                        {
-                            const url = it.url_channel + "/video?ref=pc_userpage_menu";
-                            const response = await fetch(url);
-                            const restext = await response.text();
-                            let dom = await (new DOMParser()).parseFromString(restext,"text/html");
-                            let json = restext.match(/(\{"@context":.+\})<\/script>/)[1]
-                            const context_json = JSON.parse(json);
-                            
-                            let channel_detail = {};
-                            channel_detail["channel_id"] = it.username;
-                            channel_detail["channel_title"] = context_json["name"];
-                            channel_detail["channel_url"] = context_json["url"];
-                            channel_detail["channel_image"] = context_json["image"];
-                            channel_detail["channel_description"] = context_json["description"];
-                            channel_detail["channel_keywords"] = "";
-                            channel_detail["channel_subscribers"] = restext.match(/followerCount&quot;:([0-9]+),/)[1]
-                            it.channel_detail = channel_detail
-                            it.refresher.update_attr(channel_detail)
-                            // console.log(channel_detail)
-                        }
-                    }
+                    const url = it.url_channel + "/video?ref=pc_userpage_menu";
+                    const response = await fetch(url);
+                    const restext = await response.text();
+                    let dom = await (new DOMParser()).parseFromString(restext,"text/html");
+                    let json = restext.match(/(\{"@context":.+\})<\/script>/)[1]
+                    const context_json = JSON.parse(json);
+                    
+                    let channel_detail = {};
+                    channel_detail["channel_id"] = it.username;
+                    channel_detail["channel_title"] = context_json["name"];
+                    channel_detail["channel_url"] = context_json["url"];
+                    channel_detail["channel_image"] = context_json["image"];
+                    channel_detail["channel_description"] = context_json["description"];
+                    channel_detail["channel_keywords"] = "";
+                    channel_detail["channel_subscribers"] = restext.match(/followerCount&quot;:([0-9]+),/)[1]
+                    it.channel_detail = channel_detail
+                    it.refresher.update_attr(channel_detail)
+                    // console.log(channel_detail)
+                }catch(e){
+                    console.error(e);
+                    it.messenger.danger(e.toString(), 10000)
+                }
+            },
+            
+            getPageData : async (page) =>{
+                const it = niconicoRetriever;
 
+                try{
                     let pageSize = 100;
-                    let page = 1;
-                    if (isNullOrEmpty(remainingCount) == false){
-                        page = remainingCount.page;
-                    }
 
-                    // Get first page of /video
                     const url = `https://nvapi.nicovideo.jp/v3/users/${it.username}/videos?sortKey=registeredAt&sortOrder=desc&pageSize=${pageSize}&page=${page}`;
                     const response = await fetch(url, {
                         method: 'GET',
@@ -2268,9 +2246,10 @@ javascript:(
                         video_detail["channel_id"] = it.channel_detail["channel_id"];
                         video_detail["channel_title"] = it.channel_detail["channel_title"];
                         video_detail["channel_url"] = it.channel_detail["channel_url"];
+
                         video_detail["video_id"] = item.essential.id;
                         video_detail["title"] = item.essential.title;
-                        video_detail["type"] = item.essential.type;
+                        video_detail["type"] = (item.essential.videoLive)? "Streaming": "";
                         video_detail["video_url"] =  it.url_base + "/watch/" + item.essential.id;
                         video_detail["thumbnail_url"] = item.essential.thumbnail.url;
                         video_detail["viewCount"] = item.essential.count.view;
@@ -2279,190 +2258,96 @@ javascript:(
                         video_detail["mylist"] = item.essential.count.mylist;
                         video_detail["publishDate"] = item.essential.registeredAt;
                         video_detail["duration"] = item.essential.duration;
-                        video_detail["isLiveContent"] = (item.essential.isChannelVideo)? "Streaming": "";
                         video_detail["shortDescription"] = item.essential.shortDescription;
 
-                        const date_mills_of_this_video = Number(video_detail["publishDate"]);
+                        const date_mills_of_this_video = (new Date(video_detail["publishDate"])).getTime();
                         if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
-                            return {"totalCount": 0, "page": (page + 1), "pageSize": pageSize};
+                            return null;
                         }
 
                         // console.log(video_detail)
                         await it.refresher.append(await it.optimize_item_simple(video_detail))
                     }
 
-                    return {"totalCount": totalCount, "page": (page + 1), "pageSize": pageSize};
-                }catch(e){
-                    console.error(e);
-                    it.messenger.danger(e.toString(), 10000)
-                }
-            },
-
-            getCommunityUrlFromNicorepo : async ()=>{
-                const it = niconicoRetriever;
-
-                try{
-                    let next_parameter = "";
-                    for (let i=0; i<100; i++){
-                        // Get Nicorepo json for Live streaming history
-                        const url = `https://public.api.nicovideo.jp/v1/timelines/nicorepo/last-6-months/users/${it.username}/pc/entries.json?${next_parameter}object%5Btype%5D=program&type=onair`;
-                        const response = await fetch(url, {
-                            method: 'GET',
-                            headers: {
-                                'X-Frontend-Id': 6,
-                                'X-Frontend-Version': 0,
-                            },
-                            credentials: 'include',
-                        });
-                        const restext = await response.text();
-                        // console.log(restext)
-                        const json_obj = JSON.parse(restext);
-                        for (let item of json_obj.data){
-                            if (item.title.match(/(https:\/\/com\.nicovideo\.jp\/community\/[a-z0-9]+)\">(.+?)<\/a>/i)){
-                                let _m = item.title.match(/(https:\/\/com\.nicovideo\.jp\/community\/[a-z0-9]+)\">(.+?)<\/a>/i)
-                                return {"url": _m[1], "title": _m[2]}
-                            }else{
-                                next_parameter = `untilId=${item.id}&`
-                            }
-                        }
-
-                        await sleep(500);
+                    if (ytInitialData_obj.data.items.length < pageSize){
+                        return null;
+                    }else{
+                        return page + 1;
                     }
-                    return "";
-
                 }catch(e){
                     console.error(e);
                     it.messenger.danger(e.toString(), 10000)
                 }
             },
+
             
-            getCommunityPageData : async (communityInfo, remainingCount) =>{
+            getLivePageData : async (page) =>{
                 const it = niconicoRetriever;
+                let temp_output;
 
                 try{
-                    let pageSize = 30;
-                    let page = 1;
-                    if (isNullOrEmpty(remainingCount) == false){
-                        page = remainingCount.page;
-                        pageSize = remainingCount.pageSize;
-                    }
+                    let pageSize = 100;
 
-                    // Get first page of /video
-                    let community_id = communityInfo.url.match(/\/(co[0-9]+)$/i)[1]
-                    let community_id_num = community_id.match(/[0-9]+/)
-                    const url = `https://com.nicovideo.jp/api/v1/communities/${community_id_num}/lives.json?limit=${pageSize}&offset=${(page-1)*pageSize}`
+                    const url = `https://live.nicovideo.jp/front/api/v1/user-broadcast-history?providerId=${it.username}&providerType=user&isIncludeNonPublic=false&offset=${page-1}&limit=${pageSize}&withTotalCount=true`
                     const response = await fetch(url, {
                         method: 'GET',
-                        headers: {
-                            'X-Frontend-Id': 21,
-                            'X-Frontend-Version': 1,
-                            'X-Requested-By': `https://com.nicovideo.jp/live/${community_id}?com_header=1&page=${page}`
-                        },
                         credentials: 'include',
                         
                     });
                     const restext = await response.text();
                     // console.log(restext)
+                    temp_output = restext;
                     const ytInitialData_obj = JSON.parse(restext);
                     // console.log(ytInitialData_obj)
+                    temp_output = ytInitialData_obj;
 
                     let _continuation = "";
-                    let totalCount = ytInitialData_obj.data.total;
+                    let totalCount = ytInitialData_obj.data.totalCount;
 
-                    for(const item of ytInitialData_obj.data.lives){
+                    for(const item of ytInitialData_obj.data.programsList){
+                        temp_output = item;
                         let video_detail = {};
-                        video_detail["channel_id"] = community_id;
-                        video_detail["channel_title"] = communityInfo.title;
-                        video_detail["channel_url"] = communityInfo.url;
-                        video_detail["video_id"] = item.id;
-                        video_detail["title"] = item.title;
+                        video_detail["channel_id"] = it.channel_detail["channel_id"];
+                        video_detail["channel_title"] = it.channel_detail["channel_title"];
+                        video_detail["channel_url"] = it.channel_detail["channel_url"];
+
+                        video_detail["video_id"] = item.id.value;
+                        video_detail["title"] = item.program.title;
                         video_detail["type"] = "Streaming";
-                        video_detail["video_url"] =  item.watch_url;
-                        video_detail["thumbnail_url"] = "";
-                        video_detail["viewCount"] = "";
-                        video_detail["comments"] = "";
-                        video_detail["likes"] = "";
-                        video_detail["mylist"] = "";
-                        video_detail["publishDate"] = item.started_at;
-                        video_detail["duration"] = "";
-                        video_detail["isLiveContent"] = "Streaming";
-                        video_detail["shortDescription"] = item.description;
-                        
-                        const date_mills_of_this_video = Number(video_detail["publishDate"]);
+                        video_detail["category"] = (new JsonPathFinder()).find(item, "//categories/mainList//text");
+                        video_detail["video_url"] = "https://live.nicovideo.jp/watch/" + video_detail["video_id"];
+                        video_detail["thumbnail_url"] = (new JsonPathFinder()).find(item, "//thumbnail/screenshot/micro", true, "");
+                        video_detail["viewCount"] = item.statistics.viewers.value;
+                        video_detail["comments"] = item.statistics.comments.value;
+                        video_detail["publishDate"] = Number(item.program.schedule.openTime.seconds) * 1000;
+                        if (item.program.schedule.beginTime && item.program.schedule.endTime){
+                            video_detail["duration"] = (Number(item.program.schedule.endTime.seconds) - Number(item.program.schedule.beginTime.seconds));
+                        }
+                        video_detail["tags"] = (new JsonPathFinder()).find(item, "//taxonomy/tags//text", true, []);
+
+                        video_detail["shortDescription"] = item.program.description;
+
+                        const date_mills_of_this_video = (new Date(video_detail["publishDate"])).getTime();
                         if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
-                            return {"totalCount": 0, "page": (page + 1), "pageSize": pageSize};
+                            return null;
                         }
 
                         // console.log(video_detail)
                         await it.refresher.append(await it.optimize_item_simple(video_detail))
                     }
 
-                    return {"totalCount": totalCount, "page": (page + 1), "pageSize": pageSize};
-                }catch(e){
-                    console.error(e);
-                    it.messenger.danger(e.toString(), 10000)
-                }
-            },
-
-            getVideoPageData : async (_video_url, video_detail = {}) =>{
-                console.log(`getVideoPageData : ${_video_url} ${video_detail.title}`)
-                const it = niconicoRetriever;
-
-                // Get first page of /video
-                try{
-                    const _response = await fetch(_video_url);
-                    const _restext = await _response.text();
-                    const json = _restext.match(/<div id="js-initial-watch-data" data-api-data="(.+?)" /)[1];
-                    // console.log(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"))
-                    const json_obj = JSON.parse(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"));
-                    // console.log(json_obj)
-                    video_detail["shortDescription"] = json_obj.video.description;
-                    // console.log(video_detail["shortDescription"])
-                    video_detail["category"] = json_obj.genre.label;
-                    // console.log(video_detail["category"])
-                    
-                }catch(e){
-                    console.error(e);
-                    it.messenger.danger(e.toString(), 10000)
-                }
-    
-                return video_detail;
-            },
-
-            getLiveVideoPageData : async (_video_url, video_detail = {}) =>{
-                console.log(`getVideoPageData : ${_video_url} ${video_detail.title}`)
-                const it = niconicoRetriever;
-
-                // Get first page of /video
-                try{
-                    const _response = await fetch(_video_url);
-                    const _restext = await _response.text();
-                    const json = _restext.match(/<script id="embedded-data" data-props="(.+?)"/)[1];
-                    // console.log(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"))
-                    const json_obj = JSON.parse(json.replaceAll("&quot;", "\"").replaceAll("&lt;", "<").replace("&gt;", ">").replaceAll("&amp;", "&"));
-                    // console.log(json_obj)
-                    video_detail["video_id"] = json_obj.program.nicoliveProgramId;
-                    video_detail["thumbnail_url"] = json_obj.program.thumbnail.small;
-                    video_detail["shortDescription"] = json_obj.program.description;
-                    video_detail["viewCount"] = json_obj.program.statistics.watchCount;
-                    video_detail["comments"] = json_obj.program.statistics.commentCount;
-                    video_detail["duration"] = json_obj.program.endTime - json_obj.program.beginTime;
-                    let tags = []
-                    for (let tag of json_obj.program.tag.list){
-                        if(tag.type == "category"){
-                            video_detail["category"] = tag.text
-                        }
-                        tags.push(tag.text)
+                    if (ytInitialData_obj.data.programsList.length < pageSize){
+                        return null;
+                    }else{
+                        return page + 1;
                     }
-                    video_detail["tags"] = tags
-                    
                 }catch(e){
                     console.error(e);
+                    console.error(temp_output);
                     it.messenger.danger(e.toString(), 10000)
                 }
-    
-                return video_detail;
             },
+
             
             optimize_item_simple : async (item)=>{
                 let new_item = {
@@ -2476,20 +2361,275 @@ javascript:(
                     "title": item.title,
                     "duration": item.duration,
                     "publishDate": new Date(item.publishDate),
-                    "category": "",
-                    "type": ((i)=>{
-                        if (i.isLiveContent) {return "Streaming"}
-                        else {return i.type}
-                    })(item),
+                    "category": (item.category) ? item.category : "",
+                    "type": (item.type) ? item.type : "",
                     "viewCount": Number(item.viewCount),
                     "comments": Number(item.comments),
-                    "likes": Number(item.likes),
-                    "mylistCount":  Number(item.mylist),
+                    "likes": (item.likes)? Number(item.likes) : 0,
+                    "mylistCount":  (item.mylist)? Number(item.mylist): 0,
                     "shortDescription" : item.shortDescription,
                 }
                 return new_item;
             },
-            optimize_item_detail : async (item)=>{
+        }
+
+        
+        let niconicoChannelRetriever = {
+            interval : 500,
+            refresher : null,
+            messenger : null,
+            username : "",
+            url_channel : "",
+            url_base : "",
+
+            channel_detail : {},
+            
+            initialize : async (url, _refresher_func, _messenger_func) =>{
+                const it = niconicoChannelRetriever;
+
+                it.refresher = _refresher_func;
+                it.messenger = _messenger_func;
+
+                let url_m = url.match(/^(https:\/\/ch\.nicovideo\.jp)\/([-A-Za-z0-9_]+)(\/|\?|$)/);
+                if(url_m != null && url_m.length > 2){
+                    it.username = url_m[2];
+                    it.url_channel = url_m[1] + "/"+ url_m[2];
+                    it.url_base = url_m[1];
+
+                    return true;
+                }else{
+                    return false;
+                }
+
+            },
+            
+            retrieve : async (_retriever_parameters) =>{
+                const it = niconicoChannelRetriever;
+                const uuid = crypto.randomUUID();
+                retriever_parameters.current_retrieve_uuid = uuid;
+
+                let msg_rough_list = "Now retrieving Rough list ..."
+                let elm_msg_rough_list = await it.messenger.info(msg_rough_list)
+
+                if(true){
+                    let page = 1;
+                    for (let i=0; i<1000; i++){
+                        if (_retriever_parameters.stop_loading == true){
+                            it.messenger.warn("Loading has been stopped manually", 3000);
+                            break;
+                        }
+    
+                        if (retriever_parameters.current_retrieve_uuid !== uuid){
+                            break;
+                        }
+    
+                        if(page != null){
+                            page = await it.getContinationPageData(page);
+                            await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Video Page: ${page}`)
+                            await sleep(it.interval)
+                        }else{
+                            break;
+                        }
+                    }
+                }
+                
+                if(true){
+                    let page = 1;
+                    for (let i=0; i<1000; i++){
+                        if (_retriever_parameters.stop_loading == true){
+                            it.messenger.warn("Loading has been stopped manually", 3000);
+                            break;
+                        }
+    
+                        if (retriever_parameters.current_retrieve_uuid !== uuid){
+                            break;
+                        }
+    
+                        if(page != null){
+                            page = await it.getContinationLivePageData(page);
+                            await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Live Video Page: ${page}`)
+                            await sleep(it.interval)
+                        }else{
+                            break;
+                        }
+                    }
+                }
+
+                it.messenger.close(elm_msg_rough_list);
+                it.messenger.success("Rough list is completed", 3000)
+    
+                const msg_detail_list = "Now retrieving Detailed list ..."
+                let elm_msg_detail_list = await it.messenger.info(msg_detail_list)
+
+                for (let i=0; i<it.refresher.video_list_raw.length; i++){
+                    if (_retriever_parameters.stop_loading == true){
+                        it.messenger.warn("Loading has been stopped manually", 3000);
+                        break;
+                    }
+
+                    if (retriever_parameters.current_retrieve_uuid !== uuid){
+                        break;
+                    }
+
+                    if (it.refresher.video_list_raw[i].video_id.match(/^lv/)){
+                        let a = await it.getLiveVideoPageData(it.refresher.video_list_raw[i][it.refresher.key], clone(it.refresher.video_list_raw[i]))
+                        await it.messenger.update_msg(elm_msg_detail_list, `${msg_detail_list} ${i+1} / ${it.refresher.video_list_raw.length}`)
+                        if (a != null){
+                            let b = await it.optimize_item_detail(a)
+                            await it.refresher.update(b)
+                            await sleep(it.interval)
+                        }
+                    }
+                }
+
+                it.messenger.close(elm_msg_detail_list);
+                it.messenger.success("Detailed list is completed", 3000)
+            },
+
+            getContinationPageData : async (_page) =>{
+                const it = niconicoChannelRetriever;
+
+                try{
+                    let pageSize = 20;
+                    const url = `https://ch.nicovideo.jp/${it.username}/video?&mode=&sort=f&order=d&type=&page=${_page}`
+                    // console.log(url)
+                    const _response = await fetch(url, {
+                        method: 'GET', // *GET, POST, PUT, DELETE, etc.
+                    });
+    
+                    const _restext = await _response.text();
+                    // console.log(_restext);
+                    let dom = await (new DOMParser()).parseFromString(_restext,"text/html");
+                    
+                    if (_page == 0){
+                        it.channel_detail["channel_id"] = it.username;
+                        it.channel_detail["channel_title"] = trim($(".//*[@class='channel_name']", dom).textContent);
+                        it.channel_detail["channel_url"] = it.url_channel;
+                        it.channel_detail["channel_image"] = $(".//*[@id='cp_symbol']//img", dom).getAttribute("src")
+                        it.refresher.update_attr(it.channel_detail)
+                    }
+
+                    for (let item of $$("//li[@class='item']", dom)){
+                        if (item == null) break;
+                        let video_detail = {};
+                        video_detail["channel_id"] = it.channel_detail["channel_id"];
+                        video_detail["channel_title"] = it.channel_detail["channel_title"];
+                        video_detail["channel_url"] = it.channel_detail["channel_url"];
+
+                        video_detail["video_id"] = $(".//*[@class='item_left']//a", item).getAttribute("href").match(/[^\/]+$/)[0];
+                        video_detail["video_url"] = $(".//*[@class='item_left']//a", item).getAttribute("href");
+                        video_detail["thumbnail_url"] = $(".//img", item).getAttribute("src");
+                        video_detail["title"] = trim($(".//*[@class='title']/a", item).textContent);
+                        video_detail["duration"] = $(".//*[contains(@class, 'length')]", item) ? convertColonTimeToSec(trim($(".//*[contains(@class, 'length')]", item).textContent)) : "";
+                        video_detail["publishDate"] = $(".//time/var", item) ? new Date(trim($(".//time/var", item).textContent)) : "";
+                        video_detail["type"] = ""
+                        video_detail["shortDescription"] = $(".//*[contains(@class, 'description')]", item) ? trim($(".//*[contains(@class, 'description')]", item).textContent) : "";
+
+                        video_detail["viewCount"] = $(".//li[contains(@class, 'view')]/var", item)? $(".//li[contains(@class, 'view')]/var", item).textContent.replace(/[^0-9]/g, "") : "";
+                        video_detail["comments"] = $(".//li[contains(@class, 'comment')]/var", item)? $(".//li[contains(@class, 'comment')]/var", item).textContent.replace(/[^0-9]/g, "") : "";
+                        video_detail["mylist"] = $(".//li[contains(@class, 'mylist')]/var", item)? $(".//li[contains(@class, 'mylist')]/var", item).textContent.replace(/[^0-9]/g, "") : "";
+                        
+                        const date_mills_of_this_video = (new Date(video_detail["publishDate"])).getTime() + ((new Date(video_detail["publishDate"])).getTimezoneOffset() * 60 * 1000);
+                        if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
+                            return null;
+                        }
+
+                        await it.refresher.append(await it.optimize_item_simple(video_detail))
+                    }
+
+                    if ($$("//li[@class='item']", dom).length < pageSize){
+                        return null;
+                    }else{
+                        return _page + 1;
+                    }
+        
+                }catch(e){
+                    console.error(e);
+                    it.messenger.danger(e.toString(), 10000)
+                }
+            },
+            
+            getContinationLivePageData : async (_page) =>{
+                const it = niconicoChannelRetriever;
+
+                try{
+                    let pageSize = 10;
+                    
+                    const url = `https://ch.nicovideo.jp/${it.username}/live?&page=${_page}`
+                    // console.log(url)
+                    const _response = await fetch(url, {
+                        method: 'GET', // *GET, POST, PUT, DELETE, etc.
+                    });
+    
+                    const _restext = await _response.text();
+                    // console.log(_restext);
+                    let dom = await (new DOMParser()).parseFromString(_restext,"text/html");
+
+                    for (let item of $$("//li[@class='item']", dom)){
+                        if (item == null) break;
+                        let video_detail = {};
+                        video_detail["channel_id"] = it.channel_detail["channel_id"];
+                        video_detail["channel_title"] = it.channel_detail["channel_title"];
+                        video_detail["channel_url"] = it.channel_detail["channel_url"];
+
+                        video_detail["video_id"] = $(".//*[@class='item_left']//a", item).getAttribute("href").match(/[^\/]+$/)[0];
+                        video_detail["video_url"] = $(".//*[@class='item_left']//a", item).getAttribute("href");
+                        video_detail["thumbnail_url"] = $(".//*[@class='item_left']//img", item).getAttribute("src");
+                        video_detail["title"] = trim($(".//*[@class='title']/a", item).textContent);
+                        video_detail["publishDate"] = $(".//*[@class='date']", item) ? new Date(trim($(".//*[@class='date']", item).textContent).replace(/[^0-9 \/:]/g, "")) : "";
+                        video_detail["type"] = "Streaming"
+                        video_detail["shortDescription"] = $(".//*[contains(@class, 'description')]", item) ? trim($(".//*[contains(@class, 'description')]", item).textContent) : "";
+
+                        const date_mills_of_this_video = (new Date(video_detail["publishDate"])).getTime() + ((new Date(video_detail["publishDate"])).getTimezoneOffset() * 60 * 1000);
+                        if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
+                            return null;
+                        }
+
+                        await it.refresher.append(await it.optimize_item_simple(video_detail))
+                    }
+
+                    if ($$("//li[@class='item']", dom).length < pageSize){
+                        return null;
+                    }else{
+                        return _page + 1;
+                    }
+        
+                }catch(e){
+                    console.error(e);
+                    it.messenger.danger(e.toString(), 10000)
+                }
+            },
+            
+            getLiveVideoPageData : async (_video_url, video_detail = {}) =>{
+                const it = niconicoChannelRetriever;
+
+                // Get first page of /video
+                try{
+                    const _response = await fetch(_video_url);
+                    const _restext = await _response.text();
+                    let dom = await (new DOMParser()).parseFromString(_restext,"text/html");
+
+                    // console.log(_video_url)
+                    video_detail["duration"] = $(".//*[contains(@class, 'time-score')]//*[contains(@class, 'max')]", dom) ? convertColonTimeToSec(trim($(".//*[contains(@class, 'time-score')]//*[contains(@class, 'max')]", dom).textContent)): "";
+                    video_detail["viewCount"] = $(".//*[contains(@class, 'watch-count-item')]/span", dom)? $(".//*[contains(@class, 'watch-count-item')]/span", dom).getAttribute("data-value") : "";
+                    video_detail["comments"] = $(".//*[contains(@class, 'comment-count-item')]/span", dom)? $(".//*[contains(@class, 'comment-count-item')]/span", dom).getAttribute("data-value") : "";
+                    
+                    video_detail["tags"] = [];
+                    for (let k of $$(".//ul[contains(@class, 'tag')]", dom)){
+                        if (k == null) break;
+                        video_detail["tags"].push($(".//*[contains(@class, 'name-anchor')]", k).textContent)
+                    }
+                    // console.log(video_detail)
+
+                }catch(e){
+                    console.error(e);
+                    it.messenger.danger(e.toString(), 10000)
+                }
+    
+                return video_detail;
+            },
+
+            optimize_item_simple : async (item)=>{
                 let new_item = {
                     "channel_id": item.channel_id,
                     "channel_title": item.channel_title,
@@ -2499,22 +2639,46 @@ javascript:(
                     "video_url" : item.video_url,
                     "thumbnail_url" : item.thumbnail_url,
                     "title": item.title,
-                    "duration": item.duration,
-                    "publishDate": new Date(item.publishDate),
-                    "category": item.category,
-                    "type": ((i)=>{
-                        if (i.isLiveContent) {return "Streaming"}
-                        else {return i.type}
-                    })(item),
+                    "duration": Number(item.duration),
+                    "publishDate": new Date((new Date(item.publishDate)).getTime() + ((new Date(item.publishDate)).getTimezoneOffset() * 60 * 1000)),
+                    "category": isNullOrEmpty(item.category) ? "" : item.category,
+                    "type": isNullOrEmpty(item.type) ? "" : item.type,
                     "viewCount": Number(item.viewCount),
                     "comments": Number(item.comments),
-                    "likes": Number(item.likes),
-                    "mylistCount":  Number(item.mylist),
-                    "shortDescription" : item.shortDescription,
+                    "likes": (item.likes)? Number(item.likes) : 0,
+                    "mylistCount":  (item.mylist)? Number(item.mylist): 0,
+                    "tags" : item.tags
                 }
                 return new_item;
-            }
+            },
 
+            optimize_item_detail : async (item)=>{
+                try{
+                    let new_item = {
+                        "channel_id": item.channel_id,
+                        "channel_title": item.channel_title,
+                        "channel_url": item.channel_url,
+
+                        "video_id": item.video_id,
+                        "video_url" : item.video_url,
+                        "thumbnail_url" : item.thumbnail_url,
+                        "title": item.title,
+                        "duration": Number(item.duration),
+                        "publishDate": new Date((new Date(item.publishDate)).getTime() + ((new Date(item.publishDate)).getTimezoneOffset() * 60 * 1000)),
+                        "category": isNullOrEmpty(item.category) ? "" : item.category,
+                        "type": isNullOrEmpty(item.type) ? "" : item.type,
+                        "viewCount": Number(item.viewCount),
+                        "comments": Number(item.comments),
+                        "likes": (item.likes)? Number(item.likes) : 0,
+                        "mylistCount":  (item.mylist)? Number(item.mylist): 0,
+                        "shortDescription": item.shortDescription,
+                    }
+                    return new_item;
+                }catch(e){
+                    console.error(e)
+                    return null;
+                }
+            }
         }
         
         let twitcastingRetriever = {
@@ -2677,7 +2841,7 @@ javascript:(
                         video_detail["viewCount"] = $(".//*[@class='tw-movie-thumbnail-view']", item)? $(".//*[@class='tw-movie-thumbnail-view']", item).textContent : "";
                         video_detail["comments"] = $(".//*[@class='tw-movie-thumbnail-comment']", item) ? $(".//*[@class='tw-movie-thumbnail-comment']", item).textContent : "";
 
-                        const date_mills_of_this_video = (new Date(item.publishDate)).getTime() + ((new Date(item.publishDate)).getTimezoneOffset() * 60 * 1000);
+                        const date_mills_of_this_video = (new Date(video_detail["publishDate"])).getTime() + ((new Date(video_detail["publishDate"])).getTimezoneOffset() * 60 * 1000);
                         if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
                             return null;
                         }
@@ -3378,6 +3542,8 @@ javascript:(
             iframe_elm_id : `${prefix}_iframe`.toString(),
             iframe_elm : null,
             is_iframe_loop_completed : null,
+            is_rough_list_completed : null,
+            is_detail_list_completed : null,
 
             channel_detail : {},
             
@@ -3405,23 +3571,47 @@ javascript:(
                 const uuid = crypto.randomUUID();
                 retriever_parameters.current_retrieve_uuid = uuid;
 
+                const stop_all = {status: false};
+                it.is_iframe_loop_completed = {"status" : false};
+                it.is_rough_list_completed = {"status" : false, "item_ids": []};
+                it.is_detail_list_completed = {"status" : false, "item_ids": []};
+
                 let msg_rough_list = "Now retrieving Rough list ..."
                 let elm_msg_rough_list = await it.messenger.info(msg_rough_list)
 
-                await it.getInitialPageData();
+                it.iframe_elm = await it.getInitialPageData();
+                
+                scrollToPageBottom(it.iframe_elm.contentWindow, it.is_iframe_loop_completed, stop_all);    // Dp this as ASYNC intenyionally
 
-                while (it.is_iframe_loop_completed["status"] !== true){
-                    if (_retriever_parameters.stop_loading == true){
-                        it.messenger.warn("Loading has been stopped manually", 3000);
-                        break;
+                (async () => {
+                    for (let i=0; i<1000; i++) {
+                        if (_retriever_parameters.stop_loading == true){
+                            it.messenger.warn("Loading has been stopped manually", 3000);
+                            break;
+                        }
+                        if (retriever_parameters.current_retrieve_uuid != uuid){
+                            break;
+                        }
+                        if(stop_all.status == true){
+                            break;
+                        }
+                        
+                        // console.log(it.is_iframe_loop_completed)
+                        it.is_rough_list_completed = await it.getContinationPageData(it.iframe_elm, it.is_rough_list_completed);
+                        await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Total item: ${it.refresher.video_list_raw.length}`)
+                        // if (i==8) break;
+                        await sleep(it.interval);
+                        
+                        if(it.is_iframe_loop_completed["status"] == true){
+                            break
+                        }
                     }
+                    it.is_rough_list_completed.status = true;
                     
-                    // console.log(it.is_iframe_loop_completed)
-                    continuationRequestJson = await it.getContinationPageData();
-                    await it.messenger.update_msg(elm_msg_rough_list, `${msg_rough_list} Total item: ${it.refresher.video_list_raw.length}`)
-                    // if (i==8) break;
-                    await sleep(it.interval);
-                }
+                    if (document.getElementById(it.iframe_elm_id) != null){
+                        document.getElementById(it.iframe_elm_id).remove();
+                    }
+                })()    // Execute this block as ASYNC
 
                 it.messenger.close(elm_msg_rough_list);
                 it.messenger.success("Rough list is completed", 3000)
@@ -3429,28 +3619,43 @@ javascript:(
                 const msg_detail_list = "Now retrieving Detailed list ..."
                 let elm_msg_detail_list = await it.messenger.info(msg_detail_list)
 
-                if (_retriever_parameters.retrieve_detail == true){
+                for (let j=0; j<100000; j++){
                     for (let i=0; i<it.refresher.video_list_raw.length; i++){
                         if (_retriever_parameters.stop_loading == true){
                             it.messenger.warn("Loading has been stopped manually", 3000);
                             break;
                         }
-
                         if (retriever_parameters.current_retrieve_uuid !== uuid){
                             break;
                         }
-
-                        let a = await it.getVideoPageData(it.refresher.video_list_raw[i][it.refresher.key], clone(it.refresher.video_list_raw[i]))
-                        await it.messenger.update_msg(elm_msg_detail_list, `${msg_detail_list} ${i+1} / ${it.refresher.video_list_raw.length}`)
-                        if (a != null){
-                            let b = await it.optimize_item_detail(a)
-                            await it.refresher.update(b)
-                            await sleep(it.interval);
-                        }else{
+                        if(stop_all.status == true){
                             break;
                         }
+
+                        it.is_detail_list_completed = await it.getVideoPageData(
+                            it.refresher.video_list_raw[i][it.refresher.key],
+                            clone(it.refresher.video_list_raw[i]),
+                            it.is_detail_list_completed,
+                            stop_all
+                        );
+                        await it.messenger.update_msg(elm_msg_detail_list, `${msg_detail_list} ${i+1} / ${it.refresher.video_list_raw.length}`)
+                        await sleep(it.interval);
+                    }
+                    
+                    if(it.is_rough_list_completed["status"] == true){
+                        break
+                    }
+
+                    await sleep(it.interval);
+                }
+
+                // Delete items if the video_list_raw is not in the is_detail_list_completed.item_ids
+                for (let i=(it.refresher.video_list_raw.length-1); i>=0; i--){
+                    if (it.is_detail_list_completed.item_ids.includes(it.refresher.video_list_raw[i].video_id) == false){
+                        it.refresher.video_list_raw.splice(i, 1);
                     }
                 }
+                it.refresher.refresh()
 
                 it.messenger.close(elm_msg_detail_list);
                 it.messenger.success("Detailed list is completed", 3000)
@@ -3460,32 +3665,37 @@ javascript:(
                 const it = tiktokRetriever;
 
                 try{
-                    it.iframe_elm = await iframeLoad(it.iframe_elm_id, it.url_channel, `visibility: hidden; position: absolute; z-index: 50001; width: 1200px; height: 1000px; top:0;left:0`)
+                    let iframe_elm = await iframeLoad(it.iframe_elm_id, it.url_channel, `visibility: hidden; position: absolute; z-index: 50001; width: 1200px; height: 1000px; top:0;left:0`)
                     // console.log("getInitialPageData")
-                    it.is_iframe_loop_completed = {"status" : false};
 
-                    // console.log(it.iframe_elm.contentWindow.document)
-                    it.channel_detail["channel_id"] = await $(".//*[@data-e2e='user-title']/text()", it.iframe_elm.contentWindow.document).textContent;
+                    for (let i=0; i<10; i++){
+                        if (await $(".//*[@data-e2e='user-title']/text()", iframe_elm.contentWindow.document) != null){
+                            break;
+                        }else{
+                            await sleep(it.interval);
+                        }
+                    }
+                    it.channel_detail["channel_id"] = await $(".//*[@data-e2e='user-title']/text()", iframe_elm.contentWindow.document).textContent;
                     it.channel_detail["channel_url"] = it.url_channel;
-                    it.channel_detail["channel_title"] = await $(".//*[@data-e2e='user-subtitle']/text()", it.iframe_elm.contentWindow.document).textContent;
-                    it.channel_detail["channel_subscribers"] = await $(".//*[@data-e2e='followers-count']/text()", it.iframe_elm.contentWindow.document).textContent;
-                    it.channel_detail["channel_description"] = await $(".//*[@data-e2e='user-bio']/text()", it.iframe_elm.contentWindow.document).textContent;
-                    it.channel_detail["channel_image"] = attr(await $(".//*[@data-e2e='user-page']//*[@shape='circle']//img", it.iframe_elm.contentWindow.document), "src");
+                    it.channel_detail["channel_title"] = await $(".//*[@data-e2e='user-subtitle']/text()", iframe_elm.contentWindow.document).textContent;
+                    it.channel_detail["channel_subscribers"] = await $(".//*[@data-e2e='followers-count']/text()", iframe_elm.contentWindow.document).textContent;
+                    it.channel_detail["channel_description"] = await $(".//*[@data-e2e='user-bio']/text()", iframe_elm.contentWindow.document).textContent;
+                    it.channel_detail["channel_image"] = attr(await $(".//*[@data-e2e='user-page']//*[@shape='circle']//img", iframe_elm.contentWindow.document), "src");
                     
                     it.refresher.update_attr(it.channel_detail);
                     // console.log(it.channel_detail);
-                    
-                    scrollToPageBottom(it.iframe_elm.contentWindow, it.is_iframe_loop_completed);    // Dp this as ASYNC intenyionally
+
+                    return iframe_elm;
                 }catch(e){
                     console.error(e);
                     it.messenger.danger(e.toString(), 10000)
                 }
             },
             
-            getContinationPageData : async () =>{
+            getContinationPageData : async (iframe_elm, param) =>{
                 const it = tiktokRetriever;
                 try{
-                    for (const node of $$("//*[@data-e2e='user-post-item-list']/div", it.iframe_elm.contentWindow.document)){
+                    for (const node of $$("//*[@data-e2e='user-post-item-list']/div", iframe_elm.contentWindow.document)){
                         let video_detail = {};
                         video_detail["video_id"] = attr($(".//*[@data-e2e='user-post-item']//a", node), "href").match(/([0-9]+)$/)[1];
                         video_detail["title"] = attr($(".//*[@data-e2e='user-post-item']//a//img", node), "alt");
@@ -3496,27 +3706,39 @@ javascript:(
                         // video_detail["duration"] = item.node.lengthSeconds;
 
                         // console.log(video_detail)
-                        await it.refresher.update(await it.optimize_item_simple(video_detail))
+                        if (param.item_ids.includes(video_detail["video_id"])){
+                            continue
+                        }else{
+                            param.item_ids.push(video_detail["video_id"]);
+                            await it.refresher.update(await it.optimize_item_simple(video_detail));
+                        }
                     }
         
                 }catch(e){
                     console.error(e);
                     it.messenger.danger(e.toString(), 10000)
                 }
+
+                return param;
             },
 
-            getVideoPageData : async (_video_url, video_detail = {}) =>{
+            getVideoPageData : async (_video_url, video_detail = {}, param = null, stop_all = null) =>{
                 console.log(`getVideoPageData : ${_video_url} ${video_detail.title}`)
                 const it = tiktokRetriever;
 
                 // Get first page of /video
                 try{
-                    it.iframe_elm = await iframeLoad(it.iframe_elm_id, _video_url, `visibility: hidden; position: absolute; z-index: 50001; width: 1200px; height: 1000px; top:0;left:0`)
+                    if (param.item_ids.includes(video_detail.video_id)){
+                        return param;
+                    }
+
+                    const iframe_elm_id = it.iframe_elm_id + "_detail"
+                    const iframe_elm = await iframeLoad(iframe_elm_id, _video_url, `visibility: hidden; position: absolute; z-index: 50001; width: 1200px; height: 1000px; top:0;left:0`)
                     
                     // console.log(it.iframe_elm.contentWindow.document)
                     
                     for (let i=0;i<100;i++){
-                        let _temp_sec = convertColonTimeToSec($(".//*[contains(@class, 'SeekBarTimeContainer')]", it.iframe_elm.contentWindow.document).textContent.split("/")[1])
+                        let _temp_sec = convertColonTimeToSec($(".//*[contains(@class, 'SeekBarTimeContainer')]", iframe_elm.contentWindow.document).textContent.split("/")[1])
                         if (_temp_sec == 0){
                             await sleep(200)
                             continue;
@@ -3526,7 +3748,7 @@ javascript:(
                         }
                     }
 
-                    video_detail["publishDate"] = $(".//*[@data-e2e='browser-nickname']/span[2]", it.iframe_elm.contentWindow.document).textContent;
+                    video_detail["publishDate"] = $(".//*[@data-e2e='browser-nickname']/span[contains(./text(), '-')]", iframe_elm.contentWindow.document).textContent;
                     if(video_detail["publishDate"].match(/[a-z前]/)){
                         video_detail["publishDate"] = customDateConverter(video_detail["publishDate"]);
                     }else if(video_detail["publishDate"].match(/[-]/g).length >= 2){
@@ -3537,18 +3759,33 @@ javascript:(
                         video_detail["publishDate"] = new Date("1900-01-01")
                     }
 
-                    video_detail["comments"] = customNumberConverter($(".//*[@data-e2e='comment-count']", it.iframe_elm.contentWindow.document).textContent)
-                    video_detail["likes"] = customNumberConverter($(".//*[@data-e2e='like-count']", it.iframe_elm.contentWindow.document).textContent)
+                    video_detail["comments"] = customNumberConverter($(".//*[@data-e2e='comment-count']", iframe_elm.contentWindow.document).textContent)
+                    video_detail["likes"] = customNumberConverter($(".//*[@data-e2e='like-count']", iframe_elm.contentWindow.document).textContent)
                     
-                    if (document.getElementById(it.iframe_elm_id) != null){
-                        document.getElementById(it.iframe_elm_id).remove();
+                    if (document.getElementById(iframe_elm_id) != null){
+                        document.getElementById(iframe_elm_id).remove();
                     }
+                    
+                    const date_mills_of_this_video = video_detail["publishDate"].getTime();
+                    if ((new Date()).getTime() - retriever_parameters.crawling_term > date_mills_of_this_video){
+                        console.log(video_detail["publishDate"])
+                        param.status = true;
+                        if(stop_all != null) stop_all.status = true;
+                        return param;
+                    }
+
+                    if (param.item_ids.includes(video_detail.video_id) == false){
+                        let b = await it.optimize_item_detail(video_detail)
+                        await it.refresher.update(b);
+                        param.item_ids.push(video_detail.video_id);
+                    }
+
                 }catch(e){
                     console.error(e);
                     it.messenger.danger(e.toString(), 10000)
                 }
     
-                return video_detail;
+                return param;
             },
 
             optimize_item_simple : async (item)=>{
@@ -3902,7 +4139,7 @@ javascript:(
                 style.setAttribute("id", it.popup_style_id);
                 const css = `
                     #${prefix}_video_list input[type=text]{
-                        z-index: 5003;
+                        z-index: 5000003;
                         padding: 6px;
                         font-size: 1.5em;
                         font-height:1.5;
@@ -3979,9 +4216,12 @@ javascript:(
                         position: sticky;
                         top: 0;
                         background-color: #FFF;
+                        text-align: center;
                     }
                     .${prefix}_video_list_table th,td{
                         border-bottom: solid 1px rgb(222, 226, 230) !important;
+                        border-right: dotted 1px rgb(236, 236, 240) !important;
+                        padding-right: 6px;
                         vertical-align: middle !important;
                     }
                     
@@ -4035,7 +4275,7 @@ javascript:(
                     transition: opacity .15s linear;
                     top: 0;
                     left: 0;
-                    z-index: 5000;
+                    z-index: 5000000;
                     width: 100vw;
                     height: 100vh;
                     background-color : #000;
@@ -4054,7 +4294,7 @@ javascript:(
                     width: 100vw;
                     height: 100vh;
                     display: block;
-                    z-index: 5001;
+                    z-index: 5000001;
                     font-size: 10px;
                 `;
 
@@ -4071,7 +4311,7 @@ javascript:(
                     margin-right: auto;
                     padding-top: 5px;
                     padding-bottom: 15px;
-                    z-index: 5002;
+                    z-index: 5000002;
                     border-radius: 10px;
                     font-family : "YakuHanJPs","-apple-system","BlinkMacSystemFont","Segoe UI","Hiragino Sans","Hiragino Kaku Gothic ProN","Meiryo",Roboto, Arial, sans-serif;
                 `;
@@ -4234,6 +4474,7 @@ javascript:(
                 }
                 term_dropdown.style.cssText = `
                     height: 2.2em;
+                    font-size: 12px;
                     margin: 6px;
                     border-radius: 4px;
                     border: solid #AAA 1px;
@@ -5274,6 +5515,10 @@ javascript:(
                 "url_regex" : /^https:\/\/www\.nicovideo\.jp\/user\/[0-9]+/gi,
                 "retriever" : niconicoRetriever,
             },
+            "niconico_channel" : {
+                "url_regex" : /^https:\/\/ch\.nicovideo\.jp\/[A-Za-z0-9]+/gi,
+                "retriever" : niconicoChannelRetriever,
+            },
             "twitcasting" : {
                 "url_regex" : /^https:\/\/twitcasting\.tv\/[-0-9A-Za-z_]+/gi,
                 "retriever" : twitcastingRetriever,
@@ -5328,6 +5573,7 @@ javascript:(
             }
 
             if (target_service != null){
+                console.log("Detected media service : " + retriever_parameters.service_name)
             
                 if ("target_search_columns" in target_service){
                     renderer.target_search_columns = target_service.target_search_columns;
@@ -5355,7 +5601,7 @@ javascript:(
         }
 
         
-        async function scrollToPageBottom(_window = window, res = {}){
+        async function scrollToPageBottom(_window = window, res = {}, stop_all = null){
 
             res["status"] = false;
 
@@ -5367,7 +5613,7 @@ javascript:(
             for (let i=0; i<1000; i++){
                 const current_scrollHeight = _window.document.documentElement.scrollHeight;
                 console.log("previous_scrollHeight : " + previous_scrollHeight + ", current_scrollHeight : " + current_scrollHeight);
-                console.log("kick? " + (previous_scrollHeight < current_scrollHeight));
+                console.log("stop? " + (previous_scrollHeight < current_scrollHeight));
                 if (previous_scrollHeight < current_scrollHeight){
                     previous_scrollHeight = previous_scrollHeight + Math.floor(_window.document.documentElement.clientHeight / 2);
                     _window.scrollTo(0, previous_scrollHeight);
@@ -5380,6 +5626,10 @@ javascript:(
                         console.log("quit the loop? " + (previous_scrollHeight < current_scrollHeight));
                         break;
                     }
+                }
+
+                if (stop_all != null && stop_all.status == true){
+                    break;
                 }
             }
 
