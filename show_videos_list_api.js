@@ -1059,6 +1059,7 @@ javascript:(
         const default_target_display_columns = ["thumbnail_url", "title", "duration", "publishDate", "category", "type", "viewCount", "comments", "likes"];
         const default_target_search_columns = ["title", "shortDescription"];
         const search_date_format_field = ["publishDate"];
+        const column_graphical_view = ["duration", "viewCount", "comments", "likes", "mylistCount", "reply_count", "favorite_count", "retweet_count", "quote_count"];
 
         let retriever_parameters = {
             retrieve_detail : true,
@@ -1194,6 +1195,7 @@ javascript:(
                     }
                 }
 
+                it.refresher.renderer.draw_gradient_graph();
                 it.messenger.close(elm_msg_rough_list);
                 it.messenger.success("Rough list is completed", 3000)
     
@@ -1220,6 +1222,7 @@ javascript:(
                 }
 
                 it.messenger.close(elm_msg_detail_list);
+                it.refresher.renderer.draw_gradient_graph();
                 it.messenger.success("Detailed list is completed", 3000)
             },
 
@@ -4954,7 +4957,7 @@ javascript:(
                             if (_key == "thumbnail_url"){
                                 if (render_parameters.showThubmnail == true){
                                     new_tbody_innerHTML += `
-                                        <td style="${_column.css_param}">
+                                        <td style="${_column.css_param}" data-field="${_key}">
                                             <a href="${_row["video_url"]}" target="_blank">
                                                 <img style='width: 4em;' src='${_row[_key]}' />
                                             </a>
@@ -4962,11 +4965,12 @@ javascript:(
                                 }
                             }else if(_key == "title"){
                                 new_tbody_innerHTML += `
-                                    <td style="${_column.css_param}">
+                                    <td style="${_column.css_param}" data-field="${_key}">
                                         <a href="${_row["video_url"]}" target="_blank">${_row[_key]}</a>
                                     </td>`;
                             }else{
-                                new_tbody_innerHTML += `<td style="${_column.css_param}">${_row[_key]}</td>`;
+                                /* Normal column */
+                                new_tbody_innerHTML += `<td style="${_column.css_param}" data-field="${_key}" data-value="${_row["raw_value"][_key]}">${_row[_key]}</td>`;
                             }
                         }
                         new_tbody_innerHTML += "</tr>"
@@ -4984,35 +4988,54 @@ javascript:(
                             }
                         }
 
-                        new_td_innerHTML = "";
-                        for (let _column of it.columns){
-                            const _key = _column.key;
-                            if (it.target_display_columns.includes(_key) == false){
-                                continue;
-                            }
-
-                            if (_key == "thumbnail_url"){
-                                if (render_parameters.showThubmnail == true){
-                                    new_td_innerHTML += `
-                                        <td style="${_column.css_param}">
+                        if(isNullOrEmpty(target_elm) == false){
+                            for (const _td_elm of $$(".//td", target_elm)){
+                                const _key = _td_elm.getAttribute("data-field");
+                                if (_key == "thumbnail_url"){
+                                    if (render_parameters.showThubmnail == true){
+                                        _td_elm.innerHTML = escapeHTMLPolicy.createHTML(`
                                             <a href="${_row["video_url"]}" target="_blank">
                                                 <img style='width: 4em;' src='${_row[_key]}' />
-                                            </a>
-                                        </td>`;
+                                            </a>`
+                                        );
+                                    }
+                                }else if(_key == "title"){
+                                    _td_elm.innerHTML = escapeHTMLPolicy.createHTML(`
+                                        <a href="${_row["video_url"]}" target="_blank">${_row[_key]}</a>`
+                                    );
+                                }else{
+                                    /* Normal column */
+                                    _td_elm.setAttribute("data-value", _row["raw_value"][_key]);
+                                    _td_elm.innerHTML = escapeHTMLPolicy.createHTML(`${_row[_key]}`);
                                 }
-                            }else if(_key == "title"){
-                                new_td_innerHTML += `
-                                    <td style="${_column.css_param}">
-                                        <a href="${_row["video_url"]}" target="_blank">${_row[_key]}</a>
-                                    </td>`;
-                            }else{
-                                new_td_innerHTML += `<td style="${_column.css_param}">${_row[_key]}</td>`;
                             }
-                        }
-
-                        if(isNullOrEmpty(target_elm) == false){
-                            target_elm.innerHTML = escapeHTMLPolicy.createHTML(new_td_innerHTML);
                         }else{
+                            new_td_innerHTML = "";
+                            for (let _column of it.columns){
+                                const _key = _column.key;
+                                if (it.target_display_columns.includes(_key) == false){
+                                    continue;
+                                }
+
+                                if (_key == "thumbnail_url"){
+                                    if (render_parameters.showThubmnail == true){
+                                        new_td_innerHTML += `
+                                            <td style="${_column.css_param}" data-field="${_key}">
+                                                <a href="${_row["video_url"]}" target="_blank">
+                                                    <img style='width: 4em;' src='${_row[_key]}' />
+                                                </a>
+                                            </td>`;
+                                    }
+                                }else if(_key == "title"){
+                                    new_td_innerHTML += `
+                                        <td style="${_column.css_param}" data-field="${_key}">
+                                            <a href="${_row["video_url"]}" target="_blank">${_row[_key]}</a>
+                                        </td>`;
+                                }else{
+                                    /* Normal column */
+                                    new_td_innerHTML += `<td style="${_column.css_param}" data-field="${_key}" data-value="${_row["raw_value"][_key]}">${_row[_key]}</td>`;
+                                }
+                            }
                             let tbody_elm = it.table_section_elm.getElementsByTagName("tbody")[0];
                             new_td_innerHTML = `<tr ${it.refresher.key}="${_row[it.refresher.key]}">` + new_td_innerHTML + "</tr>";
                             tbody_elm.innerHTML = escapeHTMLPolicy.createHTML(tbody_elm.innerHTML + new_td_innerHTML);
@@ -5020,6 +5043,40 @@ javascript:(
                     }
                 }
                 return;
+            },
+
+            draw_gradient_graph : async ()=>{
+                let it = renderer;
+                
+                /* Calculate maximum of each graphic-column field */
+                let _maximum_values = {};
+                for (const _c of column_graphical_view){
+                    _maximum_values[_c] = 1;
+                }
+
+                for(_tr_elm of $$(".//tr", it.table_section_elm.getElementsByTagName("tbody")[0])){
+                    for(_td_elm of $$(".//td", _tr_elm)){
+                        if (column_graphical_view.includes(_td_elm.getAttribute("data-field"))){
+                            if (Number(_td_elm.getAttribute("data-value")) > _maximum_values[_td_elm.getAttribute("data-field")]){
+                                _maximum_values[_td_elm.getAttribute("data-field")] = Number(_td_elm.getAttribute("data-value"));
+                            }
+                        }
+                    }
+                }
+
+                for(_tr_elm of $$(".//tr", it.table_section_elm.getElementsByTagName("tbody")[0])){
+                    for(_td_elm of $$(".//td", _tr_elm)){
+                        /* Normal column */
+                        let _gradient_css = "";
+                        const _key = _td_elm.getAttribute("data-field");
+                        const _value = _td_elm.getAttribute("data-value");
+                        if (column_graphical_view.includes(_key)){
+                            // console.log(`Gradient ${_key}: ${_value}, ${_maximum_values[_key]}`);
+                            _gradient_percentage = Math.floor(Number(_value) / _maximum_values[_key] * 100);
+                            _td_elm.style.background = `linear-gradient(to right, #dfd ${_gradient_percentage}%, rgba(0,0,0,0) ${_gradient_percentage}% )`;
+                        }
+                    }
+                }
             },
 
             reset_items : async ()=>{
@@ -5219,6 +5276,16 @@ javascript:(
                 }
 
                 let new_item = clone(item);
+                
+                let raw_value = {};
+                for (const _c in new_item){
+                    if (Object.prototype.toString.call(new_item[_c]).match(/Date/)){
+                        raw_value[_c] = new_item[_c].toISOString();
+                    }else{
+                        raw_value[_c] = new_item[_c];
+                    }
+                }
+                new_item["raw_value"] = raw_value;
 
                 if (isNullOrEmpty(new_item.publishDate) == false){
                     new_item.publishDate = `${(new Date(new_item.publishDate)).toISOString().slice(0,10)}`
@@ -5231,6 +5298,7 @@ javascript:(
                     new_item.likes = `${formatNumberWithComma(new_item.likes)}`
                     new_item.mylistCount = `${formatNumberWithComma(new_item.mylistCount)}`
                 }
+
                 return new_item;
             },
 
@@ -5472,6 +5540,7 @@ javascript:(
 
                 it.renderer.reset_items();
                 it.renderer.render_items(it.video_list_optimized);
+                it.renderer.draw_gradient_graph();
             },
 
             sort: async (_key, _sort_order)=>{
